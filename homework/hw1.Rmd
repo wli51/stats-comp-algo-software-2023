@@ -116,7 +116,7 @@ Now write a bash script which repeats the following cycle of steps for 99 times:
 
 **Question:** Does the size of the folder look reasonable relative to the sizes of the individual files inside it? (Use `ls -l -h` to list the files with the size info; `-l` is for "long.") If not, why would that be? How would this explain why [Github discourages you from commiting (large) binary files](https://docs.github.com/en/repositories/working-with-files/managing-large-files/about-large-files-on-github)?
 
-**Your answer:** (To be filled.)
+The git_experiment direcotry occupies roughly 86K of diskspace after 99 cycles of writing one line, compiling pdf and commits. This disk usage relative to the individual files within the folder, which sums up to around 37K, seemed to be not reasonable. The directory might have been swelled by the git commits by the size of binary files per commit. This explains why git discourages commiting large binary files as they make repo unnecessarily bulky.   
 
 ## Things to commit and submit
 
