@@ -5,7 +5,7 @@ do
 	let linenum="10+$commit_count"
 	module load tex
 	sed -i "$linenum i adding one line." foo.tex
-	pdflatex foo.tex 
+	pdflatex foo.tex > /dev/null 2>&1 
 	
 	git add -u
 	git commit -m "Add a line to Tex file."
