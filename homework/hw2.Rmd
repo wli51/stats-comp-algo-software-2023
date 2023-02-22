@@ -130,7 +130,7 @@ Also, what is the slope in the "latter part" of your plotted line, roughly speak
 Explain why we observe such a slope in the relative error. 
 (Hint: Consider a machine with 10 decimal digits of accuracy. What happens if we numerically differentiate $f(x) = x$ at $x = 1$ with $\Delta x = 0.1, 0.01, 0.001, \ldots$.) 
 
-The relative error plot starts with large error for large finite difference step sizes. The relative error decreases with decreasing finite difference step size , which is reasonable because with finer step we will better approximate the true derivative. After step sizes of around 2^-20, the relative error begins to rise again, most likely due to precision limitation. The slope in the "latter part" is approximate -1 (log2 relative error/log2 stepsize), suggesting that we are hitting the limit of machine precision and every extra decimal digit we demand the approximation just gets truncated somewhere in the calculation and translates to error. At some extremely small finite difference value the relative error should hit a boundary and flatten out after that, as x + dx and x - dx becomes no different to the computer and func(x + dx) - func(x - dx) just becomes 0.  
+The relative error plot starts with large error for large finite difference step sizes. The relative error decreases with decreasing finite difference step size , which is reasonable because with finer step we will better approximate the true derivative. After step sizes of around 2^-20, the relative error begins to rise again, most likely due to precision limitation. The slope in the "latter part" is approximately -1 (log2 relative error/log2 stepsize), suggesting that we are hitting the limit of machine precision and every extra decimal digit we demand the approximation just gets truncated somewhere in the calculation and translates to error. At some extremely small finite difference value the relative error should hit a boundary and flatten out after that, as x + dx and x - dx becomes no different to the computer and func(x + dx) - func(x - dx) just becomes 0.  
 
 
 ## Part B: Extention to multivariate functions
@@ -234,4 +234,4 @@ Please, pretty please, do not calculate an inverse of a matrix.
     
 ## Things to commit/submit
 
-Link to the pull request.
+https://github.com/wli51/hiperglm/pull/1
