@@ -96,5 +96,4 @@ Why?
 
 ## Things to commit/submit
 
-* Link to the pull request.
-* (Optional) Answer to the bonus question.
+https://github.com/wli51/hiperglm/pull/2
