@@ -96,4 +96,9 @@ Why?
 
 ## Things to commit/submit
 
+<<<<<<< HEAD
 https://github.com/wli51/hiperglm/pull/2
+=======
+* Link to the pull request.
+* (Optional) Answer to the bonus question.
+>>>>>>> upstream
