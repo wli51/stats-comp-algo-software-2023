@@ -51,8 +51,47 @@ for (i in 1:10^6) {
 }
 ```
 
+```{Rcpp}
+#include <Rcpp.h>
+using Rcpp::NumericVector;
+
+// [[Rcpp::export]]
+double inner_prod2(const NumericVector& v, const NumericVector& w) {
+  if (v.size() != w.size()) {
+    Rcpp::stop("Incompatible vector lengths.");
+  }
+  double result = 0;
+  for (int i = 0; i < v.size(); ++i) {
+    result += v[i] * w[i];
+  }
+  return result;
+}
+```
+
+```{r}
+inner_prod2(v, w)
+```
+
+```{r}
+first_val <- inner_prod2(v, w)
+
+for (i in 1:10^6) {
+  v <- rep(1, vec_size)
+  w <- rep(1, vec_size)
+  subseq_val <- inner_prod2(v, w)
+  if (!identical(first_val, subseq_val, num.eq = TRUE)) {
+    print(subseq_val)
+    stop("The last inner prod result disagrees with the previous ones.")
+  }
+}
+```
+
+
 **Questions:**
 What behavior do you observe above? How do you explain it?
+
+The given inner_product function from inner_prod.cpp seemed to return one wrong answer most of the time and occasionally returns something very off. 
+The problem is probably caused by the misspecification of indexing and condition of the for loop, the starting index should be 0 instead of 1 and the terminating condition should be i < v.size() instead of i <= v.size(). I believe when you do i <= v.size() in c++ you are telling the function to reach 1 extra block of memory that immediately follows the last element in the actual v array and that block of memory can contain some random thing that in turn gets treated as a number in subsequent calcution and messes it up.  
 
 
 ## Part B: Sloppy matrix-matrix multiplication
@@ -80,6 +119,13 @@ dgemm_eigen(A, B)
 **Questions:**
 What do you get as an output? What if you re-run the code chunk? Explain the observed behavior.
 
+Initially it returns a 4 by 2 matrix where each row is [1024 -3.056997e+300]
+
+Then it becomes a 4 by 2 matrix where each row is [1024 NaN]
+
+The returned matrix still has the its first dimension matching the first dimension of A and its second matching the second dimension of B, however, we only get sensible output in the first column. And the second column is some random large negative number. I am assuming that because the function does not check matrix dimensions, when producing the first row of the product the function is taking every row in A of ones (1 by 1024) and dot producting it with the first 1024 elements it is able to access in B, in which case it just uses everything in B (512 by 2) and treating as a single column. This produces the 1024 we see in the answer. When it moves on to compute the second column in the product, the function takes each row in A and trys to dot product it with another 1024 elements that follows the first 1024 elements in B, which is a big chunk of random memory, and produces the absurd numbers and NaNs.  
+
+
 ## Part C: Consequence of "tresspassing"
 
 The code below uses the `axpy_c()` function as seen in lecture.
@@ -87,6 +133,7 @@ Run it and see what happens.
 (I am not sure if the behavior is reproducible 100% of time; if you don't observe anything striking, restart the R session and run the code chunk in a fresh state.)
 
 ```{r, eval=FALSE}
+# TERMINATES MY R SESSION DUE TO FATAL ERROR EVERY TIME, DON'T RUN
 Rcpp::sourceCpp(file.path("src", "axpy_c.cpp"), rebuild = TRUE)
 
 a <- 3.14
@@ -97,6 +144,10 @@ axpy_c(a, x, y)
 ```
 
 Now try running the code below; it should execute just fine unlike the above one.
+
+```{r}
+Rcpp::sourceCpp(file.path("src", "axpy_c.cpp"), rebuild = TRUE)
+```
 
 ```{r, eval=FALSE}
 a <- 3.14
@@ -141,6 +192,7 @@ B <- matrix(rnorm(n_inner * n_col_out), nrow = n_inner, ncol = n_col_out)
 
 ```{r}
 # Check the output of `row_col_dot_matmat`
+product_row_orr <- row_col_dot_matmat(A, B)
 ```
 
 ## Part B: Going one step beyond your linear algebra class
@@ -152,15 +204,39 @@ Then compare performances of `row_col_dot_matmat` and `col_oriented_matmat` (but
 Which one is faster and why?
 
 ```{r}
-# Check and benchmark
+Rcpp::sourceCpp(file.path("src", "matmat.cpp"))
 ```
+
+```{r}
+# Check and benchmark
+product_col_orr <- col_oriented_matmat(A, B)
+```
+
+```{r}
+library(microbenchmark)
+bench::mark(
+  row_col_dot_matmat(A, B)
+)
+```
+
+```{r}
+bench::mark(
+  col_oriented_matmat(A, B)
+)
+```
+
+Column oriented matrix multiplication is more than 40 times faster than row oriented implementation. In column oriented matrix we are access both A and B in a column by column fashion (multiply every value in first, second, third, ... column of A by the kth element first, second, third, row in B, summing up, and repeat for all k columns of B), we ensure that the data required for the next operation (one element below the current in column context) will more frequently be in CPU cache. Hence we reduce the chance of cache miss and allows CPU to do useful thing in most clock cycles. On the other hand, in row-oriented multiplication, often times the data needed for next operation will resideone column across, which increases the chance of cache miss and the CPU will have to idle for long durations to wait for that data to be cached. Hence column oriented matrix multiplication is faster. 
 
 Also compare with performance of the matrix-matrix multiplication via `%*%` in R, which uses whatever the BLAS library your R was configured with.
 (You can find out which BLAS library R is using via `sessionInfo()` or `extSoftVersion()`.) 
 
 ```{r}
-# Fill in
+bench::mark(
+  A %*% B
+)
 ```
+
+The speed of base R is comparable to that of column oriented matrix muliplication in Rcpp. 
 
 When benchmarking alternative implementations (or alternative algorithms, more generally), keep in mind that the relative performance depends significantly on the size of a test problem.
 It is important, therefore, to benchmark your implementation/algorithm on problems of realistic size. 
@@ -215,5 +291,17 @@ Rcpp::sourceCpp(file.path("..", "lecture", "src", "gemm_eigen.cpp"))
 
 ```{r, eval=FALSE}
 # Benchmark
-dgemm_eigen(A, B)
+bench::mark(
+  dgemm_eigen(A, B)
+)
 ```
+
+I was having issues trying to get Makevars.win to work on my windows environment, so I performed this portion on a JHPCE unit. 
+With no compiler option specified, the time was 643 ms
+With only mavx turned on, time was 140ms 
+With only mfma turned on, time was 73.7ms 
+With only msse turned off, time was 282ms
+With both mfma and mavx, the time was 79.1ms
+With both mfma and mavx on and msse off, the time was 115ms
+
+All benchmarks vary slightly when you run them repeatedly. 
