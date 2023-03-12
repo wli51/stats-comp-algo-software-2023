@@ -1,6 +1,8 @@
 ---
 title: 'Homework: Numerical linear algebra'
 output:
+  html_document:
+    df_print: paged
   html_notebook:
     code_folding: none
     highlight: textmate
@@ -54,21 +56,41 @@ source(file.path("R", "random_matrix.R"))
 mat_size <- 1024L
 A <- rand_positive_def_matrix(mat_size, cond_num = 1e3)
 b <- rnorm(mat_size)
+```
 
+```{r}
 solve_via_cholesky <- function(A, b) {
-  # Fill in
+  R <- t(chol(A))
+  backsolve(t(R), forwardsolve(R, b))
 }
 
+solve_via_qr <- function(A, b) {
+  # QR <- qr(A)
+  # backsolve(qr.R(QR), qr.qty(QR, b))
+  solve.qr(qr(A), b, tol = .Machine$double.eps)
+}
+```
+
+```{r}
 bench::mark(
   solve(A, b)
 )
+```
+
+```{r}
 bench::mark(
   solve_via_cholesky(A, b)
 )
+```
+
+```{r}
 bench::mark(
-  # Solve via QR decomposition
+  solve_via_qr(A, b)
 )
 ```
+The similarity between runtimes of LU decomposition and cholesky is expected, for LU is dominated by the elimination process which is $\approx \sum_{p'=1}^p  2p'(n-1) \approx O(p^2n)$ here we have $n = p$, which makes it similar to the cholesky decomposition which is $O(p^3)$ 
+
+The result is not as expected for QR. We expect the complexity of solving linear system Ax = b to be similar for cholesky with O(p^3) and QR decomp with O(2np^2), as here we have matrix dimensions n = p = 1024. However, it seems like QR decomposition is somehow slower here by a factor of roughly 2 - 3, which remains consistent even when adjusting the dimension of A up or down. 
 
 ## Part B: Competition in terms of numerical accuracy/stability
 
@@ -102,6 +124,19 @@ x <- rnorm(mat_size)
 
 ```
 
+
+```{r}
+pld <- matvec_ldouble(A, x)
+pd <- matvec_double(A, x)
+
+(norm(pld, type="2") - norm(pd, type="2"))/norm(pd, type="2")*100
+```
+```{r}
+summary(abs((pd - pld)/pld))
+```
+
+With 12 extra bits of precision, we expect an additional ability to represent 4 decimal digits on top of the original 16 (25% more digits represented). However, we are only seeing relative errors around 1e-14 to 1e-16 which is way lower than that. 
+
 ### Task &#x2F06;
 
 Now randomly generate $\bA$ so that its condition number is $10^6$.
@@ -121,8 +156,37 @@ mat_size <- 1024L
 A <- rand_positive_def_matrix(mat_size, cond_num)
 x <- rnorm(mat_size)
 
+
 # Fill in
 
+b <- matvec_ldouble(A, x)
+```
+
+```{r}
+lu_x <- solve(A, b)
+chol_x <- solve_via_cholesky(A, b)
+qr_x <- solve_via_qr(A, b)
+```
+
+```{r}
+norm(lu_x-x, type="2")/norm(x, type="2")
+norm(chol_x-x, type="2")/norm(x, type="2")
+norm(qr_x-x, type="2")/norm(x, type="2")
+```
+
+```{r}
+library(ggplot2)
+library(tidyr)
+df <- data.frame(error = c(abs(lu_x - x), abs(chol_x-x), abs(qr_x-x)), 
+                  x = c(abs(x), abs(x), abs(x)), 
+                  method = c(rep("lu", mat_size), rep("chol", mat_size), 
+                             rep("qr", mat_size)) )
+
+df %>% ggplot(aes(x=x, y=error, group=method, color=method)) + geom_point(alpha=0.3) + labs(x="abs(true x)", y="abs(error)")
+```
+
+```{r}
+df %>% ggplot(aes(x=method, y=error)) + geom_boxplot()
 ```
 
 ### Task &#x4E09;
@@ -143,14 +207,15 @@ We also vary the condition number of $\bA$ and assess whether the results would 
 The QR solver will throw an error when the system is ill-condition enough that the numerical solution might not be very accurate. 
 To force it to return the solution in any case, set `tol = .Machine$double.eps`.
 
-```{r, eval=FALSE}
+```{r, cache=TRUE}
 # Utility functions for bookkeeping simulation results.
 source(file.path("R", "num_linalg_sim_study_helper.R"))
 
 n_sim <- 32L
 mat_size <- 512L
+set.seed(1918)
 cond_num <- 1e6
-metrics <- c("norm", "median", "five_percentile", "ninety_five_percentile")
+metrics <- c("norm", "median", "five_percentile", "ninety_five_percentile", "IQR")
   # TODO: add another metric and modify the helper script accordingly
 
 rel_error_list <- lapply(
@@ -163,7 +228,9 @@ for (sim_index in 1:n_sim) {
   x <- rnorm(mat_size) 
   b <- matvec_ldouble(A, x)
   x_approx <- list( 
-    # Fill in
+    "lu" = solve(A, b),
+    "chol" = solve_via_cholesky(A, b),
+    "qr" = solve_via_qr(A, b)
   )
   for (method in c("lu", "chol", "qr")) {
     rel_error <- lapply(
@@ -179,4 +246,171 @@ for (sim_index in 1:n_sim) {
 
 # TODO: visually compare errors
 
+```
+
+```{r}
+library(dplyr)
+rel_error_df <- 
+  rbind(as.data.frame(rel_error_list[["lu"]]) %>% mutate(method="LU"),
+        as.data.frame(rel_error_list[["chol"]]) %>% mutate(method="Chol"),
+        as.data.frame(rel_error_list[["qr"]]) %>% mutate(method="QR"))
+```
+
+```{r, fig.width=5, fig.height=4}
+library(gridExtra)
+grid.arrange(
+  rel_error_df %>% ggplot(aes(x=method, y=norm)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "l2 norm of relative coordinate-wise Error"), 
+  rel_error_df %>% ggplot(aes(x=method, y=median)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "Median of relative coordinate-wise Error"), 
+  rel_error_df %>% ggplot(aes(x=method, y=median)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "Median of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=five_percentile)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "5th percentile of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=ninety_five_percentile)) + 
+    geom_boxplot() + geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "95th percentile of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=IQR)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "IQR of relative coordinate-wise Error"),ncol=3, nrow=2)
+```
+
+```{r, cache=TRUE}
+cond_num <- 1e8
+set.seed(12123)
+rel_error_list <- lapply(
+  c("lu", "chol", "qr"), 
+  function(method) pre_allocate_error_list(n_sim, metrics)
+)
+
+for (sim_index in 1:n_sim) {
+  A <- rand_positive_def_matrix(mat_size, cond_num)
+  x <- rnorm(mat_size) 
+  b <- matvec_ldouble(A, x)
+  x_approx <- list( 
+    "lu" = solve(A, b),
+    "chol" = solve_via_cholesky(A, b),
+    "qr" = solve_via_qr(A, b)
+  )
+  for (method in c("lu", "chol", "qr")) {
+    rel_error <- lapply(
+      metrics, 
+      function (metric) calc_rel_error(x, x_approx[[method]], metric)
+    )
+    names(rel_error) <- metrics
+    for (metric in names(rel_error)) {
+      rel_error_list[[method]][[metric]][sim_index] <- rel_error[[metric]]
+    }
+  }
+}
+```
+
+```{r}
+rel_error_df <- 
+  rbind(as.data.frame(rel_error_list[["lu"]]) %>% mutate(method="LU"),
+        as.data.frame(rel_error_list[["chol"]]) %>% mutate(method="Chol"),
+        as.data.frame(rel_error_list[["qr"]]) %>% mutate(method="QR"))
+```
+
+```{r, fig.width=5, fig.height=4}
+grid.arrange(
+  rel_error_df %>% ggplot(aes(x=method, y=norm)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "l2 norm of relative coordinate-wise Error"), 
+  rel_error_df %>% ggplot(aes(x=method, y=median)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "Median of relative coordinate-wise Error"), 
+  rel_error_df %>% ggplot(aes(x=method, y=median)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "Median of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=five_percentile)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "5th percentile of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=ninety_five_percentile)) + 
+    geom_boxplot() + geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "95th percentile of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=IQR)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "IQR of relative coordinate-wise Error"),ncol=3, nrow=2)
+```
+
+```{r, cache=TRUE}
+cond_num <- 1e3
+set.seed(12123)
+rel_error_list <- lapply(
+  c("lu", "chol", "qr"), 
+  function(method) pre_allocate_error_list(n_sim, metrics)
+)
+
+for (sim_index in 1:n_sim) {
+  A <- rand_positive_def_matrix(mat_size, cond_num)
+  x <- rnorm(mat_size) 
+  b <- matvec_ldouble(A, x)
+  x_approx <- list( 
+    "lu" = solve(A, b),
+    "chol" = solve_via_cholesky(A, b),
+    "qr" = solve_via_qr(A, b)
+  )
+  for (method in c("lu", "chol", "qr")) {
+    rel_error <- lapply(
+      metrics, 
+      function (metric) calc_rel_error(x, x_approx[[method]], metric)
+    )
+    names(rel_error) <- metrics
+    for (metric in names(rel_error)) {
+      rel_error_list[[method]][[metric]][sim_index] <- rel_error[[metric]]
+    }
+  }
+}
+```
+
+```{r}
+rel_error_df <- 
+  rbind(as.data.frame(rel_error_list[["lu"]]) %>% mutate(method="LU"),
+        as.data.frame(rel_error_list[["chol"]]) %>% mutate(method="Chol"),
+        as.data.frame(rel_error_list[["qr"]]) %>% mutate(method="QR"))
+```
+
+```{r, fig.width=5, fig.height=4}
+grid.arrange(
+  rel_error_df %>% ggplot(aes(x=method, y=norm)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "l2 norm of relative coordinate-wise Error"), 
+  rel_error_df %>% ggplot(aes(x=method, y=median)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "Median of relative coordinate-wise Error"), 
+  rel_error_df %>% ggplot(aes(x=method, y=median)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "Median of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=five_percentile)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "5th percentile of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=ninety_five_percentile)) + 
+    geom_boxplot() + geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "95th percentile of relative coordinate-wise Error"),
+  rel_error_df %>% ggplot(aes(x=method, y=IQR)) + geom_boxplot() + 
+    geom_jitter(width = 0.2, alpha=0.3) +
+  labs(x = "Method-linear system solve", 
+       y = "IQR of relative coordinate-wise Error"),ncol=3, nrow=2)
 ```
