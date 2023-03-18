@@ -5,7 +5,7 @@ html_notebook:
   highlight: textmate
 ---
 
-```{r setup, include=FALSE}
+```{r setup}
 source(file.path("..", "R", "util.R"))
 
 required_packages <- c("Rcpp", "RcppEigen")
@@ -24,7 +24,7 @@ cat(readLines(file.path("src", "inner_prod.cpp")), sep = '\n')
 
 Ignoring the bug for the moment, run the code below and see what you get.
 
-```{r, eval=FALSE}
+```{r}
 Rcpp::sourceCpp(file.path("src", "inner_prod.cpp"))
 
 vec_size <- 1023L
@@ -37,7 +37,7 @@ Still ignoring the bug, run the code below that calculates the same inner produc
 I mean, whether there is a bug or not, an output of a deterministic calculation should surely be the same each time?
 Try running the code chunk multiple times. 
 
-```{r, error=TRUE, eval=FALSE}
+```{r, error=TRUE}
 first_val <- inner_prod(v, w)
 
 for (i in 1:10^6) {
@@ -91,7 +91,7 @@ for (i in 1:10^6) {
 What behavior do you observe above? How do you explain it?
 
 The given inner_product function from inner_prod.cpp seemed to return one wrong answer most of the time and occasionally returns something very off. 
-The problem is probably caused by the misspecification of indexing and condition of the for loop, the starting index should be 0 instead of 1 and the terminating condition should be i < v.size() instead of i <= v.size(). I believe when you do i <= v.size() in c++ you are telling the function to reach 1 extra block of memory that immediately follows the last element in the actual v array and that block of memory can contain some random thing that in turn gets treated as a number in subsequent calcution and messes it up.  
+The problem is probably caused by the misspecification of indexing and condition of the for loop, the starting index should be 0 instead of 1 and the terminating condition should be i < v.size() instead of i <= v.size(). I believe when you do i <= v.size() in c++ you are telling the function to reach 1 extra block of memory that immediately follows the last element in the actual v array and that block of memory can contain some random thing that in turn gets treated as a number in subsequent calculation and messes it up.  
 
 
 ## Part B: Sloppy matrix-matrix multiplication
@@ -133,7 +133,6 @@ Run it and see what happens.
 (I am not sure if the behavior is reproducible 100% of time; if you don't observe anything striking, restart the R session and run the code chunk in a fresh state.)
 
 ```{r, eval=FALSE}
-# TERMINATES MY R SESSION DUE TO FATAL ERROR EVERY TIME, DON'T RUN
 Rcpp::sourceCpp(file.path("src", "axpy_c.cpp"), rebuild = TRUE)
 
 a <- 3.14
@@ -164,6 +163,10 @@ Running the same piece of code from an R console (instead of an RStudio session)
 * Why does the second code chunk run fine?
 * Modify `axpy_c.cpp` to make the function safer to use.
 
+The rstudio reports fatal error and terminates my session. The R console reports segmentation fault memory not mapped error. Since in the first case we eventually tell R to assign some value to memory beyond the 1e3L length of y, which should not be accessible and triggers the fatal error. 
+
+The second piece runs fine because x is now shorter than y and hence R won't be illegally trying to assign value to memory that is beyond what is declared for y. 
+
 
 # Exercise 3: Multiplying two matrices ain't quite what you learned in your linear algebra class
 
@@ -178,11 +181,11 @@ So a conceptually natural way to implement a matrix multiplication is looping th
 Implement a matrix-matrix multiplication based on this approach as `row_col_dot_matmat` using the starter code provided in the `matmat.cpp` file.
 Then check that its output agrees with the base R matrix multiplication.
 
-```{r, eval=FALSE}
+```{r}
 Rcpp::sourceCpp(file.path("src", "matmat.cpp"))
 ```
 
-```{r, eval=FALSE}
+```{r}
 n_row_out <- 1024L
 n_inner <- 2048L
 n_col_out <- 512L
@@ -193,6 +196,10 @@ B <- matrix(rnorm(n_inner * n_col_out), nrow = n_inner, ncol = n_col_out)
 ```{r}
 # Check the output of `row_col_dot_matmat`
 product_row_orr <- row_col_dot_matmat(A, B)
+```
+
+```{r}
+all(product_row_orr == A %*% B)
 ```
 
 ## Part B: Going one step beyond your linear algebra class
@@ -213,6 +220,10 @@ product_col_orr <- col_oriented_matmat(A, B)
 ```
 
 ```{r}
+all(product_col_orr == A %*% B)
+```
+
+```{r}
 library(microbenchmark)
 bench::mark(
   row_col_dot_matmat(A, B)
@@ -225,7 +236,7 @@ bench::mark(
 )
 ```
 
-Column oriented matrix multiplication is more than 40 times faster than row oriented implementation. In column oriented matrix we are access both A and B in a column by column fashion (multiply every value in first, second, third, ... column of A by the kth element first, second, third, row in B, summing up, and repeat for all k columns of B), we ensure that the data required for the next operation (one element below the current in column context) will more frequently be in CPU cache. Hence we reduce the chance of cache miss and allows CPU to do useful thing in most clock cycles. On the other hand, in row-oriented multiplication, often times the data needed for next operation will resideone column across, which increases the chance of cache miss and the CPU will have to idle for long durations to wait for that data to be cached. Hence column oriented matrix multiplication is faster. 
+Column oriented matrix multiplication is more than 40 times faster (median time 20.2s) than row oriented implementation (median time 538ms). In column oriented matrix we are access both A and B in a column by column fashion (multiply every value in first, second, third, ... column of A by the kth element first, second, third, row in B, summing up, and repeat for all k columns of B), we ensure that the data required for the next operation (one element below the current in column context) will more frequently be in CPU cache. Hence we reduce the chance of cache miss and allows CPU to do useful thing in most clock cycles. On the other hand, in row-oriented multiplication, often times the data needed for next operation will resideone column across, which increases the chance of cache miss and the CPU will have to idle for long durations to wait for that data to be cached. Hence column oriented matrix multiplication is faster. 
 
 Also compare with performance of the matrix-matrix multiplication via `%*%` in R, which uses whatever the BLAS library your R was configured with.
 (You can find out which BLAS library R is using via `sessionInfo()` or `extSoftVersion()`.) 
@@ -236,7 +247,7 @@ bench::mark(
 )
 ```
 
-The speed of base R is comparable to that of column oriented matrix muliplication in Rcpp. 
+The speed of base R (508ms) is comparable to that of column oriented matrix muliplication in Rcpp. 
 
 When benchmarking alternative implementations (or alternative algorithms, more generally), keep in mind that the relative performance depends significantly on the size of a test problem.
 It is important, therefore, to benchmark your implementation/algorithm on problems of realistic size. 

@@ -49,7 +49,7 @@ If not (quite), why might that be?
 I misspoke about the R's built-in `chol()` function during the lecture:
 when applied to a positive-definite `A`, the function actually returns an _upper-triangular_ matrix `R` such that `t(R) %*% R == A`.
 
-```{r, eval=FALSE}
+```{r}
 # Import the `rand_positive_def_matrix` function
 source(file.path("R", "random_matrix.R"))
 
@@ -88,9 +88,9 @@ bench::mark(
   solve_via_qr(A, b)
 )
 ```
-The similarity between runtimes of LU decomposition and cholesky is expected, for LU is dominated by the elimination process which is $\approx \sum_{p'=1}^p  2p'(n-1) \approx O(p^2n)$ here we have $n = p$, which makes it similar to the cholesky decomposition which is $O(p^3)$ 
+The similarity between runtimes of LU decomposition and cholesky is expected, for LU is dominated by the elimination process which is $\approx \sum_{p'=1}^p  2p'(n-1) \approx O(2/3 p^3)$ here we have $n = p$, which makes it similar to the cholesky decomposition which is $O(1/3 p^3)$ 
 
-The result is not as expected for QR. We expect the complexity of solving linear system Ax = b to be similar for cholesky with O(p^3) and QR decomp with O(2np^2), as here we have matrix dimensions n = p = 1024. However, it seems like QR decomposition is somehow slower here by a factor of roughly 2 - 3, which remains consistent even when adjusting the dimension of A up or down. 
+The result is not as expected for QR. We expect the complexity of solving linear system Ax = b to be similar for cholesky with $O(1/3p^3)$ and QR decomp with $O(2np^2)$, as here we have matrix dimensions n = p = 1024. However, it seems like QR decomposition is somehow slower than Cholesky and LU here by a factor of roughly 2 - 3 (which remains roughly consistent even when adjusting the dimension of A up or down). Perhaps that factor came from a mix of having to allocate more memory prior to the actual computation and waiting for garbage collection to happen. 
 
 ## Part B: Competition in terms of numerical accuracy/stability
 
@@ -110,7 +110,7 @@ What is the relative difference in $\ell^2$-norm?
 How about the coordinate-wise relative differences?
 Are the observed magnitudes of the differences what you'd expect?
 
-```{r, eval=FALSE}
+```{r}
 Rcpp::sourceCpp(file.path("src", "matvec_double.cpp"))
 Rcpp::sourceCpp(file.path("src", "matvec_ldouble.cpp"))
 
@@ -129,14 +129,14 @@ x <- rnorm(mat_size)
 pld <- matvec_ldouble(A, x)
 pd <- matvec_double(A, x)
 
-(norm(pld, type="2") - norm(pd, type="2"))/norm(pd, type="2")*100
+(norm(pd - pld, type="2"))/norm(pld, type="2")
 ```
 ```{r}
 summary(abs((pd - pld)/pld))
 ```
+The relative difference in l2 norm is 5.14 e-16. And the relative coordinate wise difference range from 0 to 9.67 e-14 and 50% of the relative errors fall between 1.78 e-16 to 7.67 e-16.
 
-With 12 extra bits of precision, we expect an additional ability to represent 4 decimal digits on top of the original 16 (25% more digits represented). However, we are only seeing relative errors around 1e-14 to 1e-16 which is way lower than that. 
-
+With 12 extra bits of precision, we expect an additional ability to represent another 4 decimal digits on top of the original 16 (25% more digits represented). And hence what we get from matvec_ldouble should give us the extra precision in at least 3 extra digits. And then when we compare the output of matvec_ldouble and matvec_double we expect to get differences proprotional to the roundoff error around the 16th decimal digit. We are seeing errors on the order of e-14 probably because most output entries from the matvec calculation have 2-3 digits before the decimal point which further eats away precision. 
 ### Task &#x2F06;
 
 Now randomly generate $\bA$ so that its condition number is $10^6$.
@@ -146,7 +146,7 @@ Then solve a positive-definite system $\bA \bx = \bb$ for $\bx$ using the three 
 Which algorithm appears to be more accurate than the others? 
 Visually demonstrate your answer.
 
-```{r, eval=FALSE}
+```{r}
 set.seed(1918)
 cond_num <- 1e6
 
@@ -186,8 +186,9 @@ df %>% ggplot(aes(x=x, y=error, group=method, color=method)) + geom_point(alpha=
 ```
 
 ```{r}
-df %>% ggplot(aes(x=method, y=error)) + geom_boxplot()
+df %>% ggplot(aes(x=method, y=error, color=as.factor(method))) + geom_violin() + labs(y = "Absolute coordinate-wise error")
 ```
+Looks like QR is the most accurate, followed by cholesky and then lu comes last place. 
 
 ### Task &#x4E09;
 
@@ -414,3 +415,4 @@ grid.arrange(
   labs(x = "Method-linear system solve", 
        y = "IQR of relative coordinate-wise Error"),ncol=3, nrow=2)
 ```
+It seems like for large and small condition numbers QR gives the most error on average. Occasionally it achives accuracy comparable to the best results from cholesky and lu but most times it does worse. 

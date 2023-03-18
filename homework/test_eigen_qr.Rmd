@@ -1,0 +1,32 @@
+```{r}
+Rcpp::sourceCpp(file.path(".", "src", "test_eigen_qr.cpp"))
+```
+
+```{r}
+source(file.path("R", "random_matrix.R"))
+```
+
+```{r}
+set.seed(1918)
+cond_num <- 1e6
+
+# Larger matrices could incur substantial computational time under base R BLAS
+mat_size <- 512L 
+
+A <- rand_positive_def_matrix(mat_size, cond_num)
+x <- rnorm(mat_size)
+
+```
+
+```{r}
+b <- A %*% x
+```
+
+
+```{r}
+out <- rcpp_qr(A, b)
+```
+
+```{r}
+
+```
